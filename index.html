@@ -2,12 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Prevent zooming/scaling and disable scrolling -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <link rel="stylesheet" href="styles.css" />
   <title>Golf Game</title>
 </head>
 <body>
-  <!-- Overlay for requesting motion sensor permission -->
+  <!-- Overlay to request motion sensor permission -->
   <div id="overlay">
     <h1>Welcome to Golf Game</h1>
     <p>Please tap to start and allow motion sensor access.</p>
@@ -23,7 +24,7 @@
       <option value="hybrid">Hybrid</option>
       <option value="putter">Putter</option>
     </select>
-    <p id="promptMessage">Press near the ball and drag to draw your shot direction.</p>
+    <p id="promptMessage">Tap near the ball to aim your shot.</p>
     <button id="swingButton" disabled>Swing</button>
   </div>
 
