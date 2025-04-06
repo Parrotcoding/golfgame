@@ -11,7 +11,7 @@ const overlay = document.getElementById('overlay');
 canvas.width = window.innerWidth * 0.9;
 canvas.height = window.innerHeight * 0.6;
 
-// Game objects: ball and hole
+// Game objects: ball and hole on the course
 let ball = { x: 50, y: canvas.height - 50, radius: 10 };
 const hole = { x: canvas.width - 100, y: 100, radius: 15 };
 
@@ -23,15 +23,29 @@ const clubMultipliers = {
   putter: 0.5
 };
 
-let motionData = null;       // Latest device motion event data
-let swingInProgress = false; // Prevent overlapping swings
+// Variables for device motion
+let motionData = null;       // Latest device motion event data (when not in swing mode)
+let sensorAccX = 0;          // Latest acceleration X (for swing mode visualization)
+let sensorAccY = 0;          // Latest acceleration Y
+
+// Swing mode state variables
+let swingMode = false;
+let swingStartTime = 0;
+let swingDuration = 2000;    // Swing mode lasts 2 seconds
+let swingMaxAcc = 0;         // Maximum absolute acceleration x recorded during swing mode
+let swingDeviation = 0;      // Y acceleration corresponding to max acceleration
+// For live visualization we use sensorAccX and sensorAccY (updated in handleMotion)
 
 // Variables for drawing the shot angle
 let isDrawing = false;
 let drawnAngle = null;   // Calculated angle (in degrees) from the drawn line
 let lineEnd = null;      // Current endpoint of the drawn line
 
-// Draw the course, ball, and hole
+// -----------------------
+// Course View Functions
+// -----------------------
+
+// Draw the course with ball and hole (and red shot line if drawn)
 function drawCourse() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
@@ -55,7 +69,7 @@ function drawCourse() {
   ctx.stroke();
   ctx.closePath();
   
-  // Draw the red line if one has been drawn
+  // If a shot angle was drawn, show the red line
   if (lineEnd) {
     ctx.beginPath();
     ctx.moveTo(ball.x, ball.y);
@@ -66,9 +80,9 @@ function drawCourse() {
   }
 }
 
-// Animate the ball moving toward the target
+// Animate the ball moving to the target position on the course
 function animateBall(targetX, targetY) {
-  swingInProgress = true;
+  let swingInProgress = true;
   const frames = 60;
   const dx = (targetX - ball.x) / frames;
   const dy = (targetY - ball.y) / frames;
@@ -85,7 +99,6 @@ function animateBall(targetX, targetY) {
       ball.x = targetX;
       ball.y = targetY;
       drawCourse();
-      swingInProgress = false;
       // Reset for next shot
       drawnAngle = null;
       lineEnd = null;
@@ -96,59 +109,129 @@ function animateBall(targetX, targetY) {
   animate();
 }
 
-// Calculate and execute the swing using the drawn angle and motion sensor data
-function takeSwing() {
-  if (swingInProgress) return;
-  if (drawnAngle === null) {
-    alert("Please draw the angle first!");
-    return;
-  }
+// -----------------------
+// Swing Mode Functions
+// -----------------------
+
+// Enter swing mode when the swing button is pressed.
+// The canvas is cleared to a black background and a live visualization is shown.
+function enterSwingMode() {
+  // Transition into swing mode
+  swingMode = true;
+  // Clear the canvas with a black background for swing mode visualization
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // Reset swing mode data
+  swingMaxAcc = 0;
+  swingDeviation = 0;
+  swingStartTime = Date.now();
+  
+  // Start the live swing visualization loop
+  requestAnimationFrame(drawSwingMode);
+  
+  // Set a timer to exit swing mode after the defined duration
+  setTimeout(exitSwingMode, swingDuration);
+}
+
+// Live swing visualization: draw the current sensor acceleration vector.
+function drawSwingMode() {
+  if (!swingMode) return;
+  
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Black background
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // Center of the canvas for visualization
+  const centerX = canvas.width / 2;
+  const centerY = canvas.height / 2;
+  // Use the latest sensor values (sensorAccX, sensorAccY) for visualization
+  const scale = 20; // scaling factor for visualization
+  const lineEndX = centerX + sensorAccX * scale;
+  const lineEndY = centerY - sensorAccY * scale; // invert Y for canvas
+  
+  // Draw a white circle at the center
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, 10, 0, Math.PI * 2);
+  ctx.fillStyle = 'white';
+  ctx.fill();
+  ctx.closePath();
+  
+  // Draw a red line representing the acceleration vector
+  ctx.beginPath();
+  ctx.moveTo(centerX, centerY);
+  ctx.lineTo(lineEndX, lineEndY);
+  ctx.strokeStyle = 'red';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ctx.closePath();
+  
+  // Optional text for debugging or feedback
+  ctx.fillStyle = 'white';
+  ctx.font = '16px Arial';
+  ctx.fillText("Swinging...", 10, 30);
+  
+  requestAnimationFrame(drawSwingMode);
+}
+
+// Exit swing mode after the swing period ends, then finalize the swing.
+function exitSwingMode() {
+  swingMode = false;
+  finishSwing();
+}
+
+// Finalize the swing: use the maximum recorded sensor values to calculate swing strength and deviation,
+// combine with the drawn shot angle and club multiplier, and animate the ball.
+function finishSwing() {
+  // Use the recorded maximum acceleration (swingMaxAcc) as the swing strength,
+  // and swingDeviation (the corresponding y-axis value) as the deviation.
+  let swingStrength = swingMaxAcc || 10;  // default if no sensor data was captured
+  let deviation = swingDeviation || 0;
+  
+  console.log("Final swing strength:", swingStrength, "Final deviation:", deviation);
   
   const selectedClub = clubSelect.value;
-  const baseAngle = drawnAngle;
+  const baseAngle = drawnAngle;  // The angle drawn earlier in course view
   
-  // Determine swing strength and deviation.
-  let swingStrength = 10; // Default value if no sensor data
-  let deviation = 0;
-  
-  // Try to use acceleration data from device motion events
-  if (motionData) {
-    let accX = 0, accY = 0;
-    if (motionData.acceleration && motionData.acceleration.x !== null) {
-      accX = motionData.acceleration.x;
-      accY = motionData.acceleration.y || 0;
-    } else if (motionData.accelerationIncludingGravity && motionData.accelerationIncludingGravity.x !== null) {
-      accX = motionData.accelerationIncludingGravity.x;
-      accY = motionData.accelerationIncludingGravity.y || 0;
-    }
-    swingStrength = Math.abs(accX) || swingStrength;
-    deviation = accY || deviation;
-  } else {
-    // Fallback simulation if no motion data is available
-    swingStrength = Math.random() * 15 + 5;
-    deviation = (Math.random() - 0.5) * 10;
-  }
-  
-  console.log("Using swing strength:", swingStrength, "and deviation:", deviation);
-  
-  // Adjust swing strength by the selected club's multiplier
+  // Adjust swing strength by club multiplier
   swingStrength *= clubMultipliers[selectedClub];
   
-  // Final shot angle incorporates any deviation from the swing
+  // Final shot angle incorporates the deviation
   const finalAngle = baseAngle + deviation;
   const rad = finalAngle * Math.PI / 180;
   const distance = swingStrength * 10;
   const targetX = ball.x + distance * Math.cos(rad);
   const targetY = ball.y - distance * Math.sin(rad);
   
+  // Animate the ball on the course using the computed target position.
   animateBall(targetX, targetY);
 }
 
-// Device motion handler
+// -----------------------
+// Device Motion & Pointer Handling
+// -----------------------
+
+// Handle device motion events. When in swing mode, update the live sensor values and record maximum values.
 function handleMotion(event) {
-  motionData = event;
-  // For debugging: Uncomment the next line to log sensor data continuously
-  // console.log("Motion data:", event);
+  if (event.acceleration && event.acceleration.x !== null) {
+    sensorAccX = event.acceleration.x;
+    sensorAccY = event.acceleration.y || 0;
+  } else if (event.accelerationIncludingGravity && event.accelerationIncludingGravity.x !== null) {
+    sensorAccX = event.accelerationIncludingGravity.x;
+    sensorAccY = event.accelerationIncludingGravity.y || 0;
+  }
+  
+  if (swingMode) {
+    // Record the maximum absolute acceleration (x-axis) during the swing mode
+    if (Math.abs(sensorAccX) > swingMaxAcc) {
+      swingMaxAcc = Math.abs(sensorAccX);
+      swingDeviation = sensorAccY;
+    }
+  } else {
+    // When not in swing mode, store the event (if needed)
+    motionData = event;
+  }
 }
 
 // Utility to get pointer coordinates relative to the canvas
@@ -157,7 +240,7 @@ function getPointerPosition(e) {
   return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 }
 
-// Pointer event handlers for drawing the shot angle
+// Pointer event handlers for drawing the shot angle in course view
 function startDrawing(e) {
   const pos = getPointerPosition(e);
   const dist = Math.hypot(pos.x - ball.x, pos.y - ball.y);
@@ -183,9 +266,9 @@ function endDrawing(e) {
   lineEnd = pos;
   drawCourse();
   
-  // Calculate angle from the ball to the drawn point (adjusting for canvas coordinate system)
+  // Calculate the shot angle (in degrees) from the ball to the drawn point.
   const dx = pos.x - ball.x;
-  const dy = ball.y - pos.y; // Invert y because canvas y-axis increases downward
+  const dy = ball.y - pos.y; // Invert Y because canvas increases downward
   drawnAngle = Math.atan2(dy, dx) * (180 / Math.PI);
   console.log("Angle drawn:", drawnAngle);
   
@@ -194,16 +277,27 @@ function endDrawing(e) {
   canvas.releasePointerCapture(e.pointerId);
 }
 
-// Set up pointer event listeners
+// -----------------------
+// Event Listeners Setup
+// -----------------------
+
 canvas.addEventListener('pointerdown', startDrawing);
 canvas.addEventListener('pointermove', duringDrawing);
 canvas.addEventListener('pointerup', endDrawing);
 canvas.addEventListener('pointercancel', endDrawing);
 
-// Set up the swing button
-swingButton.addEventListener('click', takeSwing);
+// When the Swing button is pressed (after drawing the shot angle), enter swing mode.
+swingButton.addEventListener('click', () => {
+  // Only proceed if a shot angle has been drawn
+  if (drawnAngle === null) {
+    alert("Please draw the angle first!");
+    return;
+  }
+  // Enter swing mode where the device's motion is visualized and recorded.
+  enterSwingMode();
+});
 
-// Request motion sensor permission on start and remove the overlay
+// Set up device motion event listener with permission handling
 function startGame() {
   if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
     DeviceMotionEvent.requestPermission()
@@ -216,15 +310,14 @@ function startGame() {
       })
       .catch(console.error);
   } else {
-    // For devices that don't require permission
     window.addEventListener('devicemotion', handleMotion);
   }
   
   overlay.style.display = 'none';
 }
 
-// Set up start button listener
+// Set up start button listener for the overlay
 startButton.addEventListener('click', startGame);
 
-// Initial draw of the course
+// Initial draw of the course view
 drawCourse();
