@@ -224,9 +224,13 @@ function drawCourse() {
   ctx.closePath();
 }
 
-// Update camera to follow the ball if not panning manually.
+// Always keep the camera centered on the ball when it's moving.
+// If the ball is moving (state !== "idle"), ignore user panning and recenter.
 function updateCamera() {
-  if (!isPanning && ball.state === "idle") {
+  if (ball.state !== "idle") {
+    camX = Math.max(0, Math.min(ball.x - canvas.width/(2*camZoom), worldWidth - canvas.width/camZoom));
+    camY = Math.max(0, Math.min(ball.y - canvas.height/(2*camZoom), worldHeight - canvas.height/camZoom));
+  } else if (!isPanning) {
     camX = Math.max(0, Math.min(ball.x - canvas.width/(2*camZoom), worldWidth - canvas.width/camZoom));
     camY = Math.max(0, Math.min(ball.y - canvas.height/(2*camZoom), worldHeight - canvas.height/camZoom));
   }
@@ -237,7 +241,7 @@ function updateCamera() {
 // ====================
 const dt = 1/60;      // time step (seconds)
 const gravity = 3;    // gravitational acceleration (scaled)
-let currentFriction = 0.98; // set per club
+let currentFriction = 0.98; // will be set per club
 
 function simulateBallMotion() {
   function step() {
