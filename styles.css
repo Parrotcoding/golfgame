@@ -1,0 +1,31 @@
+body {
+  font-family: Arial, sans-serif;
+  text-align: center;
+  background-color: #e0f7fa;
+  margin: 0;
+  padding: 0;
+}
+
+h1 {
+  margin-top: 20px;
+}
+
+.controls {
+  margin: 20px;
+}
+
+.controls label,
+.controls select,
+.controls button,
+.controls p {
+  margin: 5px;
+  font-size: 1rem;
+}
+
+canvas {
+  border: 2px solid #333;
+  background-color: #4caf50;
+  display: block;
+  margin: 0 auto;
+  max-width: 90%;
+}
