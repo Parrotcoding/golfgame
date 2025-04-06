@@ -24,15 +24,15 @@ const clubMultipliers = {
 };
 
 // -----------------------
-// Device Motion Variables & Mapping
+// Device Motion Mapping for Swing Mode
 // -----------------------
-// For your swing, the phone is held in portrait with charging port up.
-// We'll use the device's y-axis (forward/backward) as swing strength,
-// and the x-axis as the sideways deviation.
-let sensorAccX = 0; // sideways deviation (from device's x-axis)
-let sensorAccY = 0; // forward/backward acceleration (swing strength)
+// Phone held in portrait with charging port up.
+// Use the device's y‑axis (forward/backward) for swing strength
+// and the x‑axis for sideways deviation.
+let sensorAccX = 0; // sideways deviation
+let sensorAccY = 0; // forward/backward acceleration
 
-// When not in swing mode, we may store the event in motionData if needed.
+// When not in swing mode, we can store motionData if needed.
 let motionData = null;
 
 // -----------------------
@@ -43,19 +43,20 @@ let swingStartTime = 0;
 const swingDuration = 2000;    // Swing mode lasts 2 seconds
 let swingMaxAcc = 0;           // Maximum |sensorAccY| recorded during swing mode
 let swingDeviation = 0;        // sensorAccX corresponding to the max |sensorAccY|
+let hapticTriggered = false;   // To ensure haptic is triggered once
 
 // -----------------------
 // Drawing Variables (for course view)
 // -----------------------
 let isDrawing = false;
-let drawnAngle = null;   // Angle (in degrees) from the drawn line
+let drawnAngle = null;   // Angle (in degrees) from the drawn shot line
 let lineEnd = null;      // Current endpoint of the drawn shot line
 
 // -----------------------
 // Course View Functions
 // -----------------------
 
-// Draw the course view with the ball, hole, and if available, the drawn shot line.
+// Draw the course view with ball, hole, and (if drawn) the shot line.
 function drawCourse() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
@@ -108,7 +109,7 @@ function animateBall(targetX, targetY) {
       ball.x = targetX;
       ball.y = targetY;
       drawCourse();
-      // Reset shot data for the next round
+      // Reset shot data for next round
       drawnAngle = null;
       lineEnd = null;
       promptMessage.textContent = "Press near the ball and drag to draw your shot direction.";
@@ -119,62 +120,66 @@ function animateBall(targetX, targetY) {
 }
 
 // -----------------------
-// Swing Mode Functions
+// Swing Mode Functions with Vertical Progress Bar
 // -----------------------
 
-// Enter swing mode: clear the canvas to a black background and show live acceleration.
+// Enter swing mode: clear the canvas and display a vertical progress bar.
 function enterSwingMode() {
   swingMode = true;
-  // Clear canvas for swing mode visualization (black background)
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  
-  // Reset swing data
+  hapticTriggered = false;
+  // Reset swing mode data
   swingMaxAcc = 0;
   swingDeviation = 0;
   swingStartTime = Date.now();
   
-  // Begin live visualization loop
+  // Begin live swing visualization
   requestAnimationFrame(drawSwingMode);
   
-  // End swing mode after the specified duration
+  // End swing mode after swingDuration milliseconds
   setTimeout(exitSwingMode, swingDuration);
 }
 
-// Live visualization in swing mode: show a stable acceleration vector.
+// Draw a vertical progress bar that fills upward from the bottom.
+// Its horizontal position shifts based on sensorAccX (sideways deviation).
+// When progress reaches 100%, trigger a haptic vibration.
 function drawSwingMode() {
   if (!swingMode) return;
   
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = '#000';
+  
+  // Compute progress based on time elapsed
+  let elapsed = Date.now() - swingStartTime;
+  let progress = Math.min(elapsed / swingDuration, 1);
+  
+  // Trigger haptic feedback when progress reaches 100%
+  if (progress >= 1 && !hapticTriggered) {
+    if (navigator.vibrate) {
+      navigator.vibrate(200); // vibrate for 200ms
+    }
+    hapticTriggered = true;
+  }
+  
+  // Set background (optional, can be a dark color)
+  ctx.fillStyle = '#222';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   
-  // Use the center of the canvas for visualization.
-  const centerX = canvas.width / 2;
-  const centerY = canvas.height / 2;
-  // For visualization, scale the sensor values.
-  const scale = 20;
-  // Our vector: x is sensorAccX (sideways), y is sensorAccY (forward/backward).
-  const vectorEndX = centerX + sensorAccX * scale;
-  const vectorEndY = centerY - sensorAccY * scale; // Invert y for canvas
+  // Define the vertical progress bar dimensions
+  const barWidth = 20;
+  const barHeight = progress * canvas.height;
+  // Compute horizontal offset based on current sensorAccX.
+  // A positive sensorAccX shifts the bar to the right, negative to the left.
+  let offset = sensorAccX * 10; // adjust scale factor as needed
+  const barX = canvas.width / 2 + offset - barWidth / 2;
+  const barY = canvas.height - barHeight;
   
-  // Draw a white circle at the center.
-  ctx.beginPath();
-  ctx.arc(centerX, centerY, 10, 0, Math.PI * 2);
-  ctx.fillStyle = 'white';
-  ctx.fill();
-  ctx.closePath();
+  // Draw the progress bar (red fill with white border)
+  ctx.fillStyle = 'red';
+  ctx.fillRect(barX, barY, barWidth, barHeight);
+  ctx.strokeStyle = 'white';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(barX, barY, barWidth, barHeight);
   
-  // Draw a red line representing the acceleration vector.
-  ctx.beginPath();
-  ctx.moveTo(centerX, centerY);
-  ctx.lineTo(vectorEndX, vectorEndY);
-  ctx.strokeStyle = 'red';
-  ctx.lineWidth = 4;
-  ctx.stroke();
-  ctx.closePath();
-  
-  // Display text for feedback.
+  // Optional: Display progress percentage for debugging
   ctx.fillStyle = 'white';
   ctx.font = '16px Arial';
   ctx.fillText("Swinging...", 10, 30);
@@ -188,21 +193,21 @@ function exitSwingMode() {
   finishSwing();
 }
 
-// Finalize the swing by computing shot parameters using recorded sensor values.
+// Finalize the swing by combining the recorded maximum sensor values with the drawn shot angle.
 function finishSwing() {
   // Use the maximum absolute sensorAccY recorded during swing mode as swing strength.
   let swingStrength = swingMaxAcc || 10;  // default if no significant motion was detected
   let deviation = swingDeviation || 0;      // sideways deviation from sensorAccX
   
-  console.log("Final swing strength (from sensorAccY):", swingStrength, "Final deviation (sensorAccX):", deviation);
+  console.log("Final swing strength (sensorAccY):", swingStrength, "Final deviation (sensorAccX):", deviation);
   
   const selectedClub = clubSelect.value;
-  const baseAngle = drawnAngle;  // previously drawn shot angle
+  const baseAngle = drawnAngle;  // shot angle drawn in course view
   
   // Adjust swing strength by the club multiplier.
   swingStrength *= clubMultipliers[selectedClub];
   
-  // The final shot angle incorporates deviation from the swing.
+  // Final shot angle incorporates deviation from the swing.
   const finalAngle = baseAngle + deviation;
   const rad = finalAngle * Math.PI / 180;
   const distance = swingStrength * 10; // scale factor for distance
@@ -210,7 +215,6 @@ function finishSwing() {
   const targetX = ball.x + distance * Math.cos(rad);
   const targetY = ball.y - distance * Math.sin(rad);
   
-  // Animate the ball moving along the computed trajectory.
   animateBall(targetX, targetY);
 }
 
@@ -218,8 +222,9 @@ function finishSwing() {
 // Device Motion Handling
 // -----------------------
 
-// Handle device motion events. Remap sensor data so that sensorAccY (forward/backward)
-// is used for swing strength and sensorAccX for sideways deviation.
+// Handle device motion events. Remap sensor data so that:
+// - sensorAccY (forward/backward acceleration) is used for swing strength.
+// - sensorAccX (left/right acceleration) is used for deviation.
 function handleMotion(event) {
   let aX = 0, aY = 0;
   if (event.acceleration && event.acceleration.y !== null) {
@@ -230,12 +235,11 @@ function handleMotion(event) {
     aX = event.accelerationIncludingGravity.x || 0;
   }
   
-  // Update our sensor variables
   sensorAccX = aX;
   sensorAccY = aY;
   
   if (swingMode) {
-    // Record the maximum forward/backward acceleration (sensorAccY) and associated sideways deviation.
+    // Record the maximum absolute sensorAccY and corresponding sensorAccX during swing mode.
     if (Math.abs(sensorAccY) > swingMaxAcc) {
       swingMaxAcc = Math.abs(sensorAccY);
       swingDeviation = sensorAccX;
@@ -257,7 +261,7 @@ function getPointerPosition(e) {
 function startDrawing(e) {
   const pos = getPointerPosition(e);
   const dist = Math.hypot(pos.x - ball.x, pos.y - ball.y);
-  // Begin drawing only if the pointer is within ball radius + 20 pixels.
+  // Begin drawing only if pointer is within ball radius + 20 pixels.
   if (dist <= ball.radius + 20) {
     isDrawing = true;
     console.log("Drawing started:", pos);
@@ -279,7 +283,7 @@ function endDrawing(e) {
   lineEnd = pos;
   drawCourse();
   
-  // Calculate the shot angle (in degrees) from the ball to the drawn point.
+  // Calculate shot angle (in degrees) from the ball to the drawn point.
   const dx = pos.x - ball.x;
   const dy = ball.y - pos.y; // Invert Y since canvas increases downward.
   drawnAngle = Math.atan2(dy, dx) * (180 / Math.PI);
@@ -299,13 +303,12 @@ canvas.addEventListener('pointermove', duringDrawing);
 canvas.addEventListener('pointerup', endDrawing);
 canvas.addEventListener('pointercancel', endDrawing);
 
-// When the Swing button is pressed (after drawing the shot angle), enter swing mode.
+// When the Swing button is pressed, enter swing mode.
 swingButton.addEventListener('click', () => {
   if (drawnAngle === null) {
     alert("Please draw the angle first!");
     return;
   }
-  // Enter swing mode where live sensor motion is visualized and recorded.
   enterSwingMode();
 });
 
