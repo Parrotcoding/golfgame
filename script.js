@@ -4,6 +4,8 @@ const ctx = canvas.getContext('2d');
 const clubSelect = document.getElementById('clubSelect');
 const swingButton = document.getElementById('swingButton');
 const promptMessage = document.getElementById('promptMessage');
+const startButton = document.getElementById('startButton');
+const overlay = document.getElementById('overlay');
 
 // Set canvas dimensions
 canvas.width = window.innerWidth * 0.9;
@@ -84,7 +86,7 @@ function animateBall(targetX, targetY) {
       ball.y = targetY;
       drawCourse();
       swingInProgress = false;
-      // Reset drawing for the next shot
+      // Reset for next shot
       drawnAngle = null;
       lineEnd = null;
       promptMessage.textContent = "Press near the ball and drag to draw your shot direction.";
@@ -113,8 +115,8 @@ function takeSwing() {
     swingStrength = Math.abs(motionData.acceleration.x) || 10;
     deviation = motionData.acceleration.y || 0;
   } else {
-    swingStrength = Math.random() * 15 + 5; // Simulated swing strength between 5 and 20
-    deviation = (Math.random() - 0.5) * 10;   // Simulated deviation between -5 and 5 degrees
+    swingStrength = Math.random() * 15 + 5;
+    deviation = (Math.random() - 0.5) * 10;
   }
   
   swingStrength *= clubMultipliers[selectedClub];
@@ -166,9 +168,9 @@ function endDrawing(e) {
   lineEnd = pos;
   drawCourse();
   
-  // Calculate angle from the ball to the drawn point (adjusting for canvas y-axis)
+  // Calculate angle from the ball to the drawn point (adjusting for canvas coordinate system)
   const dx = pos.x - ball.x;
-  const dy = ball.y - pos.y;
+  const dy = ball.y - pos.y; // because canvas y increases downward
   drawnAngle = Math.atan2(dy, dx) * (180 / Math.PI);
   console.log("Angle drawn:", drawnAngle);
   
@@ -183,20 +185,31 @@ canvas.addEventListener('pointermove', duringDrawing);
 canvas.addEventListener('pointerup', endDrawing);
 canvas.addEventListener('pointercancel', endDrawing);
 
-// Set up the swing button and device motion event
+// Set up the swing button
 swingButton.addEventListener('click', takeSwing);
 
-if (window.DeviceMotionEvent) {
-  if (typeof DeviceMotionEvent.requestPermission === 'function') {
-    DeviceMotionEvent.requestPermission().then(permissionState => {
-      if (permissionState === 'granted') {
-        window.addEventListener('devicemotion', handleMotion);
-      }
-    }).catch(console.error);
+// Request motion sensor permission on start and remove the overlay
+function startGame() {
+  if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+    DeviceMotionEvent.requestPermission()
+      .then(response => {
+        if (response === 'granted') {
+          window.addEventListener('devicemotion', handleMotion);
+        } else {
+          alert("Motion sensor permission denied. Motion features will be disabled.");
+        }
+      })
+      .catch(console.error);
   } else {
+    // For non-iOS devices or those that don't require permission
     window.addEventListener('devicemotion', handleMotion);
   }
+  
+  overlay.style.display = 'none';
 }
 
-// Draw the initial course
+// Set up start button listener
+startButton.addEventListener('click', startGame);
+
+// Initial draw of the course
 drawCourse();
