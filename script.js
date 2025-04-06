@@ -96,7 +96,7 @@ function animateBall(targetX, targetY) {
   animate();
 }
 
-// Calculate and execute the swing using the drawn angle
+// Calculate and execute the swing using the drawn angle and motion sensor data
 function takeSwing() {
   if (swingInProgress) return;
   if (drawnAngle === null) {
@@ -108,20 +108,33 @@ function takeSwing() {
   const baseAngle = drawnAngle;
   
   // Determine swing strength and deviation.
-  let swingStrength = 10;
+  let swingStrength = 10; // Default value if no sensor data
   let deviation = 0;
   
-  if (motionData && motionData.acceleration) {
-    swingStrength = Math.abs(motionData.acceleration.x) || 10;
-    deviation = motionData.acceleration.y || 0;
+  // Try to use acceleration data from device motion events
+  if (motionData) {
+    let accX = 0, accY = 0;
+    if (motionData.acceleration && motionData.acceleration.x !== null) {
+      accX = motionData.acceleration.x;
+      accY = motionData.acceleration.y || 0;
+    } else if (motionData.accelerationIncludingGravity && motionData.accelerationIncludingGravity.x !== null) {
+      accX = motionData.accelerationIncludingGravity.x;
+      accY = motionData.accelerationIncludingGravity.y || 0;
+    }
+    swingStrength = Math.abs(accX) || swingStrength;
+    deviation = accY || deviation;
   } else {
+    // Fallback simulation if no motion data is available
     swingStrength = Math.random() * 15 + 5;
     deviation = (Math.random() - 0.5) * 10;
   }
   
+  console.log("Using swing strength:", swingStrength, "and deviation:", deviation);
+  
+  // Adjust swing strength by the selected club's multiplier
   swingStrength *= clubMultipliers[selectedClub];
   
-  // Final shot angle includes deviation
+  // Final shot angle incorporates any deviation from the swing
   const finalAngle = baseAngle + deviation;
   const rad = finalAngle * Math.PI / 180;
   const distance = swingStrength * 10;
@@ -134,6 +147,8 @@ function takeSwing() {
 // Device motion handler
 function handleMotion(event) {
   motionData = event;
+  // For debugging: Uncomment the next line to log sensor data continuously
+  // console.log("Motion data:", event);
 }
 
 // Utility to get pointer coordinates relative to the canvas
@@ -170,7 +185,7 @@ function endDrawing(e) {
   
   // Calculate angle from the ball to the drawn point (adjusting for canvas coordinate system)
   const dx = pos.x - ball.x;
-  const dy = ball.y - pos.y; // because canvas y increases downward
+  const dy = ball.y - pos.y; // Invert y because canvas y-axis increases downward
   drawnAngle = Math.atan2(dy, dx) * (180 / Math.PI);
   console.log("Angle drawn:", drawnAngle);
   
@@ -201,7 +216,7 @@ function startGame() {
       })
       .catch(console.error);
   } else {
-    // For non-iOS devices or those that don't require permission
+    // For devices that don't require permission
     window.addEventListener('devicemotion', handleMotion);
   }
   
