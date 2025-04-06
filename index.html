@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Golf Game</title>
+</head>
+<body>
+  <h1>Golf Game</h1>
+  <div class="controls">
+    <label for="clubSelect">Select Club:</label>
+    <select id="clubSelect">
+      <option value="driver">Driver</option>
+      <option value="iron">Iron</option>
+      <option value="hybrid">Hybrid</option>
+      <option value="putter">Putter</option>
+    </select>
+    <p id="promptMessage">Press near the ball and drag to draw your shot direction.</p>
+    <button id="swingButton" disabled>Swing</button>
+  </div>
+
+  <canvas id="courseCanvas"></canvas>
+
+  <script src="script.js"></script>
+</body>
+</html>
