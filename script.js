@@ -27,8 +27,8 @@ const clubMultipliers = {
 // Device Motion Mapping for Swing Mode
 // -----------------------
 // Phone held in portrait with charging port up.
-// Use the device's y‑axis (forward/backward) for swing strength
-// and the x‑axis for sideways deviation.
+// We use the device's y‑axis for swing strength (forward/backward acceleration)
+// and the x‑axis for hit deviation (sideways).
 let sensorAccX = 0; // sideways deviation
 let sensorAccY = 0; // forward/backward acceleration
 
@@ -42,8 +42,8 @@ let swingMode = false;
 let swingStartTime = 0;
 const swingDuration = 2000;    // Swing mode lasts 2 seconds
 let swingMaxAcc = 0;           // Maximum |sensorAccY| recorded during swing mode
-let swingDeviation = 0;        // sensorAccX corresponding to the max |sensorAccY|
-let hapticTriggered = false;   // To ensure haptic is triggered once
+let swingDeviation = 0;        // sensorAccX corresponding to that max |sensorAccY|
+let hapticTriggered = false;   // Ensure haptic is triggered only once
 
 // -----------------------
 // Drawing Variables (for course view)
@@ -56,7 +56,7 @@ let lineEnd = null;      // Current endpoint of the drawn shot line
 // Course View Functions
 // -----------------------
 
-// Draw the course view with ball, hole, and (if drawn) the shot line.
+// Draw the course view with the ball, hole, and (if drawn) the shot line.
 function drawCourse() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
@@ -80,7 +80,7 @@ function drawCourse() {
   ctx.stroke();
   ctx.closePath();
   
-  // Draw the shot line if one was drawn
+  // Draw the shot line if drawn
   if (lineEnd) {
     ctx.beginPath();
     ctx.moveTo(ball.x, ball.y);
@@ -91,7 +91,7 @@ function drawCourse() {
   }
 }
 
-// Animate the ball moving on the course after the swing
+// Animate the ball moving on the course after the swing.
 function animateBall(targetX, targetY) {
   let frames = 60;
   const dx = (targetX - ball.x) / frames;
@@ -120,14 +120,13 @@ function animateBall(targetX, targetY) {
 }
 
 // -----------------------
-// Swing Mode Functions with Vertical Progress Bar
+// Swing Mode Functions with Curved Vertical Progress Bar
 // -----------------------
 
-// Enter swing mode: clear the canvas and display a vertical progress bar.
+// Enter swing mode: reset recorded sensor data and begin live visualization.
 function enterSwingMode() {
   swingMode = true;
   hapticTriggered = false;
-  // Reset swing mode data
   swingMaxAcc = 0;
   swingDeviation = 0;
   swingStartTime = Date.now();
@@ -139,47 +138,75 @@ function enterSwingMode() {
   setTimeout(exitSwingMode, swingDuration);
 }
 
-// Draw a vertical progress bar that fills upward from the bottom.
-// Its horizontal position shifts based on sensorAccX (sideways deviation).
-// When progress reaches 100%, trigger a haptic vibration.
+// Draw a vertical progress bar that fills upward from the bottom.  
+// Instead of shifting horizontally, the bar's top edge is drawn as a curved path.
+// The curvature (control point offset) is determined by sensorAccX (hit deviation).
 function drawSwingMode() {
   if (!swingMode) return;
   
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
-  // Compute progress based on time elapsed
+  // Compute progress based on elapsed time
   let elapsed = Date.now() - swingStartTime;
   let progress = Math.min(elapsed / swingDuration, 1);
   
   // Trigger haptic feedback when progress reaches 100%
   if (progress >= 1 && !hapticTriggered) {
     if (navigator.vibrate) {
-      navigator.vibrate(200); // vibrate for 200ms
+      const didVibrate = navigator.vibrate(200); // vibrate for 200ms
+      if (!didVibrate) {
+        console.log("Vibration API call did not trigger vibration.");
+      }
+    } else {
+      console.log("Vibration API not supported on this device.");
     }
     hapticTriggered = true;
   }
   
-  // Set background (optional, can be a dark color)
+  // Set background for swing mode (a dark color)
   ctx.fillStyle = '#222';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   
-  // Define the vertical progress bar dimensions
+  // Define progress bar dimensions
   const barWidth = 20;
-  const barHeight = progress * canvas.height;
-  // Compute horizontal offset based on current sensorAccX.
-  // A positive sensorAccX shifts the bar to the right, negative to the left.
-  let offset = sensorAccX * 10; // adjust scale factor as needed
-  const barX = canvas.width / 2 + offset - barWidth / 2;
-  const barY = canvas.height - barHeight;
+  const fullHeight = canvas.height;
+  const barHeight = progress * fullHeight;
+  const barBottomY = canvas.height;
+  const barTopY = canvas.height - barHeight;
   
-  // Draw the progress bar (red fill with white border)
+  // The progress bar is centered horizontally.
+  const barX = canvas.width / 2 - barWidth / 2;
+  
+  // To create a curved top edge, we draw a shape:
+  // - Bottom left: (barX, canvas.height)
+  // - Bottom right: (barX + barWidth, canvas.height)
+  // - Top right: (barX + barWidth, barTopY)
+  // - Top left: (barX, barTopY)
+  // Then we replace the flat top edge with a quadratic curve.
+  // The control point for the curve is at:
+  //   (canvas.width/2 + sensorAccX * 30, barTopY - 20)
+  // so a positive sensorAccX (hit to the right) curves the top to the right, etc.
+  const controlX = canvas.width / 2 + sensorAccX * 30;
+  const controlY = barTopY - 20;
+  
+  ctx.beginPath();
+  // Start at bottom left
+  ctx.moveTo(barX, barBottomY);
+  // Line to bottom right
+  ctx.lineTo(barX + barWidth, barBottomY);
+  // Line to top right
+  ctx.lineTo(barX + barWidth, barTopY);
+  // Curve from top right to top left using the control point
+  ctx.quadraticCurveTo(controlX, controlY, barX, barTopY);
+  ctx.closePath();
+  
   ctx.fillStyle = 'red';
-  ctx.fillRect(barX, barY, barWidth, barHeight);
+  ctx.fill();
   ctx.strokeStyle = 'white';
   ctx.lineWidth = 2;
-  ctx.strokeRect(barX, barY, barWidth, barHeight);
+  ctx.stroke();
   
-  // Optional: Display progress percentage for debugging
+  // Optional: display text for feedback
   ctx.fillStyle = 'white';
   ctx.font = '16px Arial';
   ctx.fillText("Swinging...", 10, 30);
@@ -193,24 +220,25 @@ function exitSwingMode() {
   finishSwing();
 }
 
-// Finalize the swing by combining the recorded maximum sensor values with the drawn shot angle.
+// Finalize the swing by combining the recorded sensor values with the drawn shot angle.
 function finishSwing() {
-  // Use the maximum absolute sensorAccY recorded during swing mode as swing strength.
-  let swingStrength = swingMaxAcc || 10;  // default if no significant motion was detected
-  let deviation = swingDeviation || 0;      // sideways deviation from sensorAccX
+  // Use the maximum absolute sensorAccY recorded during swing mode as swing strength,
+  // and the corresponding sensorAccX as deviation.
+  let swingStrength = swingMaxAcc || 10;  // default value if no significant motion
+  let deviation = swingDeviation || 0;
   
   console.log("Final swing strength (sensorAccY):", swingStrength, "Final deviation (sensorAccX):", deviation);
   
   const selectedClub = clubSelect.value;
   const baseAngle = drawnAngle;  // shot angle drawn in course view
   
-  // Adjust swing strength by the club multiplier.
+  // Adjust swing strength by the club's multiplier.
   swingStrength *= clubMultipliers[selectedClub];
   
-  // Final shot angle incorporates deviation from the swing.
+  // The final shot angle incorporates the deviation.
   const finalAngle = baseAngle + deviation;
   const rad = finalAngle * Math.PI / 180;
-  const distance = swingStrength * 10; // scale factor for distance
+  const distance = swingStrength * 10;  // scale factor for distance
   
   const targetX = ball.x + distance * Math.cos(rad);
   const targetY = ball.y - distance * Math.sin(rad);
@@ -303,7 +331,7 @@ canvas.addEventListener('pointermove', duringDrawing);
 canvas.addEventListener('pointerup', endDrawing);
 canvas.addEventListener('pointercancel', endDrawing);
 
-// When the Swing button is pressed, enter swing mode.
+// When the Swing button is pressed (after drawing the shot angle), enter swing mode.
 swingButton.addEventListener('click', () => {
   if (drawnAngle === null) {
     alert("Please draw the angle first!");
