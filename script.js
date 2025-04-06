@@ -57,7 +57,7 @@ let ball = {
   vx: 0,
   vy: 0,
   vz: 0,
-  state: "idle"  // "idle", "flight", "rolling"
+  state: "idle"  // can be "idle", "flight", or "rolling"
 };
 
 // ====================
@@ -85,7 +85,7 @@ let hapticTriggered = false;
 // ====================
 // Device Motion Variables
 // ====================
-// Phone held in portrait (charging port up):
+// For the phone held in portrait (charging port up):
 // sensorAccY (forward/backward acceleration) is used for swing strength,
 // sensorAccX (left/right) for deviation.
 let sensorAccX = 0;
@@ -121,7 +121,7 @@ function animateCamera(targetX, targetY, targetZoom, duration, callback) {
   function step() {
     let elapsed = Date.now() - startTime;
     let t = Math.min(elapsed / duration, 1);
-    // Simple linear interpolation; you can apply easing if desired.
+    // Linear interpolation (can add easing)
     camX = startCamX + (targetX - startCamX) * t;
     camY = startCamY + (targetY - startCamY) * t;
     camZoom = startZoom + (targetZoom - startZoom) * t;
@@ -135,13 +135,12 @@ function animateCamera(targetX, targetY, targetZoom, duration, callback) {
   requestAnimationFrame(step);
 }
 
-// Zoom in/out buttons animate the camera zoom while keeping the current center.
+// Zoom In/Out buttons animate the camera zoom while keeping the current center.
 function animateZoom(factor, duration) {
   const targetZoom = camZoom * factor;
-  // Keep current camera center in world coordinates
+  // Keep current camera center in world coordinates.
   const centerX = camX + canvas.width / (2 * camZoom);
   const centerY = camY + canvas.height / (2 * camZoom);
-  // Compute new camera top-left such that center stays the same.
   const newCamX = centerX - canvas.width / (2 * targetZoom);
   const newCamY = centerY - canvas.height / (2 * targetZoom);
   animateCamera(newCamX, newCamY, targetZoom, duration);
@@ -162,13 +161,12 @@ function drawCourse() {
   obstacles.forEach(ob => {
     let pos = worldToScreen(ob.x, ob.y);
     if (ob.type === 'tree') {
-      // Draw trunk
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, ob.radius * 0.3 * camZoom, 0, Math.PI * 2);
       ctx.fillStyle = '#8B4513';
       ctx.fill();
       ctx.closePath();
-      // Draw canopy
+      
       ctx.beginPath();
       ctx.arc(pos.x, pos.y - ob.radius * 0.2 * camZoom, ob.radius * camZoom, 0, Math.PI * 2);
       ctx.fillStyle = '#228B22';
@@ -214,7 +212,7 @@ function drawCourse() {
   ctx.fill();
   ctx.closePath();
   
-  // Draw ball (elevated by z) with scaling for depth
+  // Draw ball (offset by z) with scaling for depth
   const ballScreen = worldToScreen(ball.x, ball.y - ball.z);
   let scale = 1 - (ball.z / 200);
   ctx.beginPath();
@@ -229,7 +227,6 @@ function drawCourse() {
 // Update camera to follow the ball if not panning manually.
 function updateCamera() {
   if (!isPanning && ball.state === "idle") {
-    // Center on the ball.
     camX = Math.max(0, Math.min(ball.x - canvas.width/(2*camZoom), worldWidth - canvas.width/camZoom));
     camY = Math.max(0, Math.min(ball.y - canvas.height/(2*camZoom), worldHeight - canvas.height/camZoom));
   }
@@ -239,12 +236,12 @@ function updateCamera() {
 // Physics Simulation for Ball Motion
 // ====================
 const dt = 1/60;      // time step (seconds)
-let currentFriction = 0.98; // will be set per club
+const gravity = 3;    // gravitational acceleration (scaled)
+let currentFriction = 0.98; // set per club
 
 function simulateBallMotion() {
   function step() {
     if (ball.state === "flight") {
-      // Projectile motion updates
       ball.x += ball.vx * dt;
       ball.y += ball.vy * dt;
       ball.z += ball.vz * dt;
@@ -277,7 +274,6 @@ function simulateBallMotion() {
 // ====================
 // Swing Mode Functions (Curved Vertical Progress Bar)
 // ====================
-
 function enterSwingMode() {
   swingMode = true;
   hapticTriggered = false;
@@ -292,6 +288,7 @@ function drawSwingMode() {
   if (!swingMode) return;
   
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
   let elapsed = Date.now() - swingStartTime;
   let progress = Math.min(elapsed / swingDuration, 1);
   
@@ -359,7 +356,6 @@ function finishSwing() {
   const finalAngle = baseAngle + deviation;
   const finalAngleRad = finalAngle * Math.PI / 180;
   
-  // Use club-specific launch angle
   const launchAngle = clubData.launchAngle * Math.PI / 180;
   const desiredRange = swingStrength * 10;
   const v = Math.sqrt(desiredRange * gravity / Math.sin(2 * launchAngle));
@@ -383,7 +379,6 @@ function finishSwing() {
 // ====================
 // Device Motion Handling
 // ====================
-
 function handleMotion(event) {
   let aX = 0, aY = 0;
   if (event.acceleration && event.acceleration.y !== null) {
@@ -410,13 +405,11 @@ function handleMotion(event) {
 // ====================
 // Pointer Event Handling (Aiming & Panning)
 // ====================
-
 function getPointerPosition(e) {
   const rect = canvas.getBoundingClientRect();
   return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 }
 
-// On pointerdown: if near ball (using screen coordinates) then aim; otherwise, pan.
 canvas.addEventListener('pointerdown', (e) => {
   const pos = getPointerPosition(e);
   const ballScreen = worldToScreen(ball.x, ball.y - ball.z);
@@ -489,7 +482,6 @@ zoomOutButton.addEventListener('click', () => {
   animateZoom(1/1.2, 500);
 });
 
-// Request motion sensor permission and start motion events.
 function startGame() {
   if (typeof DeviceMotionEvent !== 'undefined' &&
       typeof DeviceMotionEvent.requestPermission === 'function') {
@@ -507,22 +499,18 @@ function startGame() {
   }
   overlay.style.display = 'none';
   
-  // Initial cinematic:
-  // 1. Show whole map by computing an initial zoom that fits the world.
+  // Initial cinematic: show whole map, then zoom into the hole and pan to the ball.
   let initialZoom = Math.min(canvas.width / worldWidth, canvas.height / worldHeight);
   camZoom = initialZoom;
   targetCamZoom = initialZoom;
-  // Center the camera on the whole map.
   camX = 0;
   camY = 0;
   drawCourse();
   
-  // After a short delay, animate camera to center on the hole.
   setTimeout(() => {
-    const targetX = hole.x - canvas.width/(2);
-    const targetY = hole.y - canvas.height/(2);
+    const targetX = hole.x - canvas.width/2;
+    const targetY = hole.y - canvas.height/2;
     animateCamera(targetX, targetY, 1, 2000, () => {
-      // Then pan to center on the ball.
       const targetX2 = ball.x - canvas.width/2;
       const targetY2 = ball.y - canvas.height/2;
       animateCamera(targetX2, targetY2, 1, 2000);
